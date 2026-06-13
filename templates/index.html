@@ -226,6 +226,139 @@
             margin-top: 20px;
             text-align: center;
         }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+            margin-left: 10px;
+        }
+
+        .btn-success:hover {
+            background: #219a52;
+        }
+
+        .matrix-section {
+            display: none;
+        }
+
+        .matrix-section.show {
+            display: block;
+        }
+
+        .matrix-table-wrapper {
+            overflow-x: auto;
+            margin-top: 15px;
+        }
+
+        .matrix-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 0.85rem;
+        }
+
+        .matrix-table th,
+        .matrix-table td {
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .matrix-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .matrix-table th.row-header {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            background: #f8f9fa;
+        }
+
+        .matrix-table th.corner {
+            position: sticky;
+            left: 0;
+            top: 0;
+            z-index: 3;
+            background: #f8f9fa;
+        }
+
+        .matrix-table td {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .matrix-table td.strong-pos {
+            color: #c0392b;
+            font-weight: 600;
+        }
+
+        .matrix-table td.strong-neg {
+            color: #2980b9;
+            font-weight: 600;
+        }
+
+        .matrix-table td.diagonal {
+            background: #e8f5e9;
+            font-weight: 700;
+        }
+
+        .json-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            max-height: 300px;
+            overflow: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            white-space: pre;
+        }
+
+        .copy-btn {
+            margin-top: 10px;
+        }
+
+        .tab-bar {
+            display: flex;
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 15px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 0.95rem;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+
+        .tab-btn:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -292,6 +425,9 @@
                 <button class="btn btn-secondary" onclick="downloadHeatmap()" id="downloadBtn" disabled>
                     下载图片
                 </button>
+                <button class="btn btn-success" onclick="fetchCorrelationJson()" id="jsonBtn" disabled>
+                    获取 JSON 数据
+                </button>
             </div>
 
             <div class="loading" id="loading">
@@ -307,22 +443,45 @@
             <img id="resultImage" class="result-image" alt="相关性热力图">
             <div class="result-info" id="resultInfo"></div>
         </div>
+
+        <div class="card matrix-section" id="matrixSection">
+            <h3 style="margin-bottom: 15px;">相关系数矩阵数据</h3>
+
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchTab('table')">交互式表格</button>
+                <button class="tab-btn" onclick="switchTab('json')">原始 JSON</button>
+            </div>
+
+            <div class="tab-content active" id="tab-table">
+                <div class="matrix-table-wrapper" id="matrixTableWrapper"></div>
+            </div>
+
+            <div class="tab-content" id="tab-json">
+                <div class="json-block" id="jsonBlock"></div>
+                <button class="btn btn-secondary copy-btn" onclick="copyJson()">复制 JSON</button>
+            </div>
+        </div>
     </div>
 
     <script>
         let selectedFile = null;
         let generatedImage = null;
+        let lastCorrelationJson = null;
 
         const uploadSection = document.getElementById('uploadSection');
         const fileInput = document.getElementById('fileInput');
         const fileName = document.getElementById('fileName');
         const generateBtn = document.getElementById('generateBtn');
         const downloadBtn = document.getElementById('downloadBtn');
+        const jsonBtn = document.getElementById('jsonBtn');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
         const resultSection = document.getElementById('resultSection');
         const resultImage = document.getElementById('resultImage');
         const resultInfo = document.getElementById('resultInfo');
+        const matrixSection = document.getElementById('matrixSection');
+        const matrixTableWrapper = document.getElementById('matrixTableWrapper');
+        const jsonBlock = document.getElementById('jsonBlock');
 
         uploadSection.addEventListener('click', () => fileInput.click());
 
@@ -351,9 +510,10 @@
 
         function handleFile(file) {
             selectedFile = file;
-            fileName.textContent = `已选择: ${file.name} (${(file.size / 1024).toFixed(2)} KB)';
+            fileName.textContent = `已选择: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
             fileName.classList.add('show');
             generateBtn.disabled = false;
+            jsonBtn.disabled = false;
             error.classList.remove('show');
         }
 
@@ -382,6 +542,7 @@
             resultSection.classList.remove('show');
             generateBtn.disabled = true;
             downloadBtn.disabled = true;
+            jsonBtn.disabled = true;
 
             try {
                 const response = await fetch('/upload', {
@@ -439,7 +600,113 @@
             } finally {
                 loading.classList.remove('show');
                 generateBtn.disabled = false;
+                jsonBtn.disabled = false;
             }
+        }
+
+        async function fetchCorrelationJson() {
+            if (!selectedFile) return;
+
+            const options = getOptions();
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('missing_strategy', options.missingStrategy);
+            formData.append('method', 'pearson');
+
+            loading.classList.add('show');
+            error.classList.remove('show');
+            matrixSection.classList.remove('show');
+            generateBtn.disabled = true;
+            jsonBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/correlation', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    lastCorrelationJson = data;
+                    renderMatrixTable(data);
+                    jsonBlock.textContent = JSON.stringify(data, null, 2);
+                    matrixSection.classList.add('show');
+                } else {
+                    throw new Error(data.error || '获取数据失败');
+                }
+            } catch (err) {
+                error.textContent = '错误: ' + err.message;
+                error.classList.add('show');
+            } finally {
+                loading.classList.remove('show');
+                generateBtn.disabled = false;
+                jsonBtn.disabled = false;
+            }
+        }
+
+        function renderMatrixTable(data) {
+            const cols = data.columns;
+            const matrix2d = data.matrix_2d;
+            let html = '<table class="matrix-table"><thead><tr><th class="corner"></th>';
+            cols.forEach(c => {
+                html += `<th>${c}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            for (let i = 0; i < cols.length; i++) {
+                html += `<tr><th class="row-header">${cols[i]}</th>`;
+                for (let j = 0; j < cols.length; j++) {
+                    const val = matrix2d[i][j];
+                    let cls = '';
+                    if (i === j) {
+                        cls = 'diagonal';
+                    } else if (val >= 0.7) {
+                        cls = 'strong-pos';
+                    } else if (val <= -0.7) {
+                        cls = 'strong-neg';
+                    }
+
+                    const bgOpacity = Math.abs(val);
+                    let bgColor = '';
+                    if (i !== j) {
+                        if (val >= 0) {
+                            bgColor = `background: rgba(231, 76, 60, ${bgOpacity * 0.3})`;
+                        } else {
+                            bgColor = `background: rgba(52, 152, 219, ${bgOpacity * 0.3})`;
+                        }
+                    }
+
+                    html += `<td class="${cls}" style="${bgColor}">${val.toFixed(4)}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            matrixTableWrapper.innerHTML = html;
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function copyJson() {
+            if (!lastCorrelationJson) return;
+            const text = JSON.stringify(lastCorrelationJson, null, 2);
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                const orig = btn.textContent;
+                btn.textContent = '已复制!';
+                btn.style.background = '#27ae60';
+                btn.style.color = 'white';
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.style.background = '';
+                    btn.style.color = '';
+                }, 1500);
+            });
         }
 
         function downloadHeatmap() {

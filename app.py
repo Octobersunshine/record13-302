@@ -71,7 +71,7 @@ def handle_missing_values(numeric_df, strategy='drop_rows'):
     return cleaned_df, stats
 
 
-def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlation Heatmap', missing_strategy='drop_rows'):
+def compute_correlation(df, missing_strategy='drop_rows'):
     numeric_df = df.select_dtypes(include=[np.number])
     if numeric_df.shape[1] < 2:
         raise ValueError('数据集中至少需要两列数值型数据才能计算相关系数')
@@ -85,8 +85,13 @@ def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlat
         raise ValueError(f'缺失值处理后仅剩 {cleaned_df.shape[0]} 行数据，请尝试其他缺失值处理策略（至少需要2行）')
 
     corr_matrix = cleaned_df.corr()
+    return corr_matrix, missing_stats
 
-    fig, ax = plt.subplots(figsize=(max(10, cleaned_df.shape[1] * 0.8), max(8, cleaned_df.shape[1] * 0.7)))
+
+def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlation Heatmap', missing_strategy='drop_rows'):
+    corr_matrix, missing_stats = compute_correlation(df, missing_strategy=missing_strategy)
+
+    fig, ax = plt.subplots(figsize=(max(10, corr_matrix.shape[1] * 0.8), max(8, corr_matrix.shape[1] * 0.7)))
     sns.heatmap(
         corr_matrix,
         annot=annot,
@@ -190,6 +195,53 @@ def upload_download():
 
     except Exception as e:
         return str(e), 500
+
+
+@app.route('/api/correlation', methods=['POST'])
+def api_correlation():
+    if 'file' not in request.files:
+        return jsonify({'error': '未找到上传的文件'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '未选择文件'}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({'error': '不支持的文件格式，请上传 CSV、TSV 或 TXT 文件'}), 400
+
+    try:
+        df = read_uploaded_file(file, file.filename)
+
+        missing_strategy = request.form.get('missing_strategy', 'drop_rows')
+        method = request.form.get('method', 'pearson')
+
+        corr_matrix, missing_stats = compute_correlation(df, missing_strategy=missing_strategy)
+
+        columns = list(corr_matrix.columns)
+        matrix_values = []
+        for i, row in enumerate(columns):
+            for j, col in enumerate(columns):
+                matrix_values.append({
+                    'row': row,
+                    'col': col,
+                    'value': round(float(corr_matrix.iloc[i, j]), 4)
+                })
+
+        return jsonify({
+            'success': True,
+            'method': method,
+            'columns': columns,
+            'shape': list(corr_matrix.shape),
+            'matrix': matrix_values,
+            'matrix_2d': [[round(float(v), 4) for v in row] for row in corr_matrix.values],
+            'correlation_matrix': corr_matrix.to_dict(),
+            'missing_stats': missing_stats
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'处理文件时出错: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
