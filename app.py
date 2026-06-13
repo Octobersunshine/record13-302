@@ -30,14 +30,63 @@ def read_uploaded_file(file_storage, filename):
         return pd.read_csv(file_storage)
 
 
-def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlation Heatmap'):
+def handle_missing_values(numeric_df, strategy='drop_rows'):
+    total_cells = numeric_df.size
+    missing_cells = numeric_df.isnull().sum().sum()
+    missing_ratio = missing_cells / total_cells if total_cells > 0 else 0
+
+    missing_per_column = numeric_df.isnull().sum().to_dict()
+
+    if strategy == 'drop_rows':
+        cleaned_df = numeric_df.dropna(axis=0, how='any')
+    elif strategy == 'drop_cols':
+        cleaned_df = numeric_df.dropna(axis=1, how='any')
+    elif strategy == 'mean':
+        cleaned_df = numeric_df.fillna(numeric_df.mean(numeric_only=True))
+    elif strategy == 'median':
+        cleaned_df = numeric_df.fillna(numeric_df.median(numeric_only=True))
+    elif strategy == 'zero':
+        cleaned_df = numeric_df.fillna(0)
+    else:
+        cleaned_df = numeric_df.dropna(axis=0, how='any')
+
+    rows_before = numeric_df.shape[0]
+    cols_before = numeric_df.shape[1]
+    rows_after = cleaned_df.shape[0]
+    cols_after = cleaned_df.shape[1]
+
+    stats = {
+        'total_missing_cells': int(missing_cells),
+        'missing_ratio': round(missing_ratio, 4),
+        'missing_per_column': {k: int(v) for k, v in missing_per_column.items()},
+        'strategy': strategy,
+        'rows_before': int(rows_before),
+        'rows_after': int(rows_after),
+        'rows_removed': int(rows_before - rows_after),
+        'cols_before': int(cols_before),
+        'cols_after': int(cols_after),
+        'cols_removed': int(cols_before - cols_after),
+    }
+
+    return cleaned_df, stats
+
+
+def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlation Heatmap', missing_strategy='drop_rows'):
     numeric_df = df.select_dtypes(include=[np.number])
     if numeric_df.shape[1] < 2:
         raise ValueError('数据集中至少需要两列数值型数据才能计算相关系数')
 
-    corr_matrix = numeric_df.corr()
+    cleaned_df, missing_stats = handle_missing_values(numeric_df, strategy=missing_strategy)
 
-    fig, ax = plt.subplots(figsize=(max(10, numeric_df.shape[1] * 0.8), max(8, numeric_df.shape[1] * 0.7)))
+    if cleaned_df.shape[1] < 2:
+        raise ValueError(f'缺失值处理后仅剩 {cleaned_df.shape[1]} 列数值型数据，请尝试其他缺失值处理策略（至少需要2列）')
+
+    if cleaned_df.shape[0] < 2:
+        raise ValueError(f'缺失值处理后仅剩 {cleaned_df.shape[0]} 行数据，请尝试其他缺失值处理策略（至少需要2行）')
+
+    corr_matrix = cleaned_df.corr()
+
+    fig, ax = plt.subplots(figsize=(max(10, cleaned_df.shape[1] * 0.8), max(8, cleaned_df.shape[1] * 0.7)))
     sns.heatmap(
         corr_matrix,
         annot=annot,
@@ -59,7 +108,7 @@ def generate_heatmap(df, annot=True, fmt='.2f', cmap='coolwarm', title='Correlat
     plt.close(fig)
     img_buffer.seek(0)
 
-    return img_buffer, corr_matrix
+    return img_buffer, corr_matrix, missing_stats
 
 
 @app.route('/')
@@ -85,8 +134,11 @@ def upload():
         annot = request.form.get('annot', 'true').lower() == 'true'
         cmap = request.form.get('cmap', 'coolwarm')
         title = request.form.get('title', 'Correlation Heatmap')
+        missing_strategy = request.form.get('missing_strategy', 'drop_rows')
 
-        img_buffer, corr_matrix = generate_heatmap(df, annot=annot, cmap=cmap, title=title)
+        img_buffer, corr_matrix, missing_stats = generate_heatmap(
+            df, annot=annot, cmap=cmap, title=title, missing_strategy=missing_strategy
+        )
 
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
 
@@ -95,7 +147,8 @@ def upload():
             'image': img_base64,
             'shape': list(corr_matrix.shape),
             'columns': list(corr_matrix.columns),
-            'correlation_matrix': corr_matrix.to_dict()
+            'correlation_matrix': corr_matrix.to_dict(),
+            'missing_stats': missing_stats
         })
 
     except ValueError as e:
@@ -122,8 +175,11 @@ def upload_download():
         annot = request.form.get('annot', 'true').lower() == 'true'
         cmap = request.form.get('cmap', 'coolwarm')
         title = request.form.get('title', 'Correlation Heatmap')
+        missing_strategy = request.form.get('missing_strategy', 'drop_rows')
 
-        img_buffer, _ = generate_heatmap(df, annot=annot, cmap=cmap, title=title)
+        img_buffer, _, _ = generate_heatmap(
+            df, annot=annot, cmap=cmap, title=title, missing_strategy=missing_strategy
+        )
 
         return send_file(
             img_buffer,

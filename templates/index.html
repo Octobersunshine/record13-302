@@ -272,6 +272,17 @@
                     显示数值标注
                 </label>
             </div>
+
+            <div class="form-group">
+                <label for="missingStrategy">缺失值处理</label>
+                <select id="missingStrategy">
+                    <option value="drop_rows">删除含缺失值的行</option>
+                    <option value="drop_cols">删除含缺失值的列</option>
+                    <option value="mean">均值填充</option>
+                    <option value="median">中位数填充</option>
+                    <option value="zero">零值填充</option>
+                </select>
+            </div>
             </div>
 
             <div class="action-buttons">
@@ -350,7 +361,8 @@
             return {
                 annot: document.getElementById('annot').checked,
                 cmap: document.getElementById('cmap').value,
-                title: document.getElementById('title').value
+                title: document.getElementById('title').value,
+                missingStrategy: document.getElementById('missingStrategy').value
             };
         }
 
@@ -363,6 +375,7 @@
             formData.append('annot', options.annot);
             formData.append('cmap', options.cmap);
             formData.append('title', options.title);
+            formData.append('missing_strategy', options.missingStrategy);
 
             loading.classList.add('show');
             error.classList.remove('show');
@@ -381,9 +394,39 @@
                 if (response.ok && data.success) {
                     generatedImage = data.image;
                     resultImage.src = 'data:image/png;base64,' + data.image;
+
+                    const stats = data.missing_stats;
+                    const strategyNames = {
+                        'drop_rows': '删除含缺失值的行',
+                        'drop_cols': '删除含缺失值的列',
+                        'mean': '均值填充',
+                        'median': '中位数填充',
+                        'zero': '零值填充'
+                    };
+                    const strategyName = strategyNames[stats.strategy] || stats.strategy;
+
+                    let missingInfo = '';
+                    if (stats.total_missing_cells > 0) {
+                        const colDetails = Object.entries(stats.missing_per_column)
+                            .filter(([_, v]) => v > 0)
+                            .map(([k, v]) => `${k}: ${v}个`)
+                            .join('，');
+                        missingInfo = `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #dee2e6;">
+                                <p style="color: #e67e22;"><strong>⚠️ 检测到缺失值</strong></p>
+                                <p><strong>缺失单元格总数:</strong> ${stats.total_missing_cells} (${(stats.missing_ratio * 100).toFixed(2)}%)</p>
+                                <p><strong>各列缺失:</strong> ${colDetails || '无'}</p>
+                                <p><strong>处理策略:</strong> ${strategyName}</p>
+                                ${stats.rows_removed > 0 ? `<p><strong>删除行数:</strong> ${stats.rows_removed} 行 (${stats.rows_before} → ${stats.rows_after})</p>` : ''}
+                                ${stats.cols_removed > 0 ? `<p><strong>删除列数:</strong> ${stats.cols_removed} 列 (${stats.cols_before} → ${stats.cols_after})</p>` : ''}
+                            </div>
+                        `;
+                    }
+
                     resultInfo.innerHTML = `
                         <p><strong>矩阵维度:</strong> ${data.shape[0]} × ${data.shape[1]}</p>
                         <p><strong>变量数量:</strong> ${data.columns.length} 个</p>
+                        ${missingInfo}
                     `;
                     resultSection.classList.add('show');
                     downloadBtn.disabled = false;
