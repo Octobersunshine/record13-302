@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相关性热力图生成服务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .upload-section {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: #fafafa;
+        }
+
+        .upload-section:hover {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+
+        .upload-section.dragover {
+            border-color: #667eea;
+            background: #e8edff;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .upload-section h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-section p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px 0;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .result-section {
+            display: none;
+        }
+
+        .result-section.show {
+            display: block;
+        }
+
+        .result-image {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .error {
+            color: #e74c3c;
+            background: #fdf0ef;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .file-name {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .file-name.show {
+            display: block;
+        }
+
+        .action-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 相关性热力图生成服务</h1>
+            <p>上传数据文件，一键生成专业的相关系数矩阵热力图</p>
+        </div>
+
+        <div class="card">
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-icon">📁</div>
+                <h3>拖拽文件到此处或点击上传</h3>
+                <p>支持 CSV、TSV、TXT 格式，最大 16MB</p>
+                <input type="file" id="fileInput" class="file-input" accept=".csv,.tsv,.txt">
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                    选择文件
+                </button>
+                <div class="file-name" id="fileName"></div>
+            </div>
+
+            <div class="options" style="margin-top: 25px;">
+                <div class="form-group">
+                <label for="cmap">配色方案</label>
+                <select id="cmap">
+                    <option value="coolwarm">冷暖色 (coolwarm)</option>
+                    <option value="viridis">渐变色 (viridis)</option>
+                    <option value="RdBu">红蓝 (RdBu)</option>
+                    <option value="YlGnBu">黄绿蓝 (YlGnBu)</option>
+                    <option value="RdYlGn">红黄绿 (RdYlGn)</option>
+                    <option value="Blues">蓝色系 (Blues)</option>
+                    <option value="Reds">红色系 (Reds)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="title">图表标题</label>
+                <input type="text" id="title" value="Correlation Heatmap">
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="annot" checked>
+                    显示数值标注
+                </label>
+            </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="generateHeatmap()" id="generateBtn" disabled>
+                    生成热力图
+                </button>
+                <button class="btn btn-secondary" onclick="downloadHeatmap()" id="downloadBtn" disabled>
+                    下载图片
+                </button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在生成热力图...</p>
+            </div>
+
+            <div class="error" id="error"></div>
+        </div>
+
+        <div class="card result-section" id="resultSection">
+            <h3 style="margin-bottom: 15px;">热力图结果</h3>
+            <img id="resultImage" class="result-image" alt="相关性热力图">
+            <div class="result-info" id="resultInfo"></div>
+        </div>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let generatedImage = null;
+
+        const uploadSection = document.getElementById('uploadSection');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const resultSection = document.getElementById('resultSection');
+        const resultImage = document.getElementById('resultImage');
+        const resultInfo = document.getElementById('resultInfo');
+
+        uploadSection.addEventListener('click', () => fileInput.click());
+
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragover');
+        });
+
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            selectedFile = file;
+            fileName.textContent = `已选择: ${file.name} (${(file.size / 1024).toFixed(2)} KB)';
+            fileName.classList.add('show');
+            generateBtn.disabled = false;
+            error.classList.remove('show');
+        }
+
+        function getOptions() {
+            return {
+                annot: document.getElementById('annot').checked,
+                cmap: document.getElementById('cmap').value,
+                title: document.getElementById('title').value
+            };
+        }
+
+        async function generateHeatmap() {
+            if (!selectedFile) return;
+
+            const options = getOptions();
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('annot', options.annot);
+            formData.append('cmap', options.cmap);
+            formData.append('title', options.title);
+
+            loading.classList.add('show');
+            error.classList.remove('show');
+            resultSection.classList.remove('show');
+            generateBtn.disabled = true;
+            downloadBtn.disabled = true;
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    generatedImage = data.image;
+                    resultImage.src = 'data:image/png;base64,' + data.image;
+                    resultInfo.innerHTML = `
+                        <p><strong>矩阵维度:</strong> ${data.shape[0]} × ${data.shape[1]}</p>
+                        <p><strong>变量数量:</strong> ${data.columns.length} 个</p>
+                    `;
+                    resultSection.classList.add('show');
+                    downloadBtn.disabled = false;
+                } else {
+                    throw new Error(data.error || '生成失败');
+                }
+            } catch (err) {
+                error.textContent = '错误: ' + err.message;
+                error.classList.add('show');
+            } finally {
+                loading.classList.remove('show');
+                generateBtn.disabled = false;
+            }
+        }
+
+        function downloadHeatmap() {
+            if (!generatedImage) return;
+
+            const link = document.createElement('a');
+            link.href = 'data:image/png;base64,' + generatedImage;
+            link.download = 'correlation_heatmap.png';
+            link.click();
+        }
+    </script>
+</body>
+</html>
